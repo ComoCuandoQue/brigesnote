@@ -21,6 +21,7 @@ yarn-error.log*
 /storage/app/*
 !/storage/app/.gitignore
 !/storage/app/public
+!/storage/app/private
 
 /storage/framework/cache/*
 !/storage/framework/cache/.gitignore
@@ -41,11 +42,13 @@ yarn-error.log*
 /storage/logs/*
 !/storage/logs/.gitignore
 
-/public/storage
-/public/hot
+# Assets compilados por Vite (el "public path" es la raiz del proyecto)
+/build
+/hot
 
 # Tests & Herramientas
 .phpunit.result.cache
+/.phpunit.cache
 Homestead.json
 Homestead.yaml
 
