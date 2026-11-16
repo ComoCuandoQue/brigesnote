@@ -2,78 +2,95 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Region;
-use App\Models\Province;
 use App\Models\District;
+use App\Models\Province;
+use App\Models\Region;
 use App\Models\School;
-use Illuminate\Http\Request;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 
 class LocationController extends Controller
 {
-    // Obtener todas las regiones desde la base de datos
-    public function getRegions()
+    /**
+     * Obtener todas las regiones registradas en la base de datos.
+     */
+    public function getRegions(): JsonResponse
     {
-        $regions = Region::all();
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $regions,
-        ]);
+        return $this->successResponse(Region::all());
     }
 
-    // Obtener provincias de una región (según los dos primeros caracteres de idDistrito)
-    public function getProvinces($idRegion)
+    /**
+     * Obtener provincias de una region segun los dos primeros digitos del ubigeo.
+     */
+    public function getProvinces(string $idRegion): JsonResponse
     {
-        // Filtrar provincias cuyo idDistrito comienza con los mismos caracteres de idRegion
-        $provinces = Province::whereRaw('LEFT(idProvincia, 2) = ?', [$idRegion])->get();
+        $provinces = $this->filterByPrefix(Province::query(), 'idProvincia', $idRegion, 2);
 
-        if ($provinces->isEmpty()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'No se encontraron provincias para esta región.',
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $provinces,
-        ]);
+        return $this->collectionOrNotFound($provinces, 'No se encontraron provincias para esta región.');
     }
 
-    // Obtener distritos de una provincia (según los cuatro primeros caracteres de idDistrito)
-    public function getDistricts($idProvince)
+    /**
+     * Obtener distritos de una provincia segun los cuatro primeros digitos del ubigeo.
+     */
+    public function getDistricts(string $idProvince): JsonResponse
     {
-        // Filtrar distritos cuyo idDistrito comienza con los mismos caracteres de idProvincia
-        $districts = District::whereRaw('LEFT(idDistrito, 4) = ?', [$idProvince])->get();
+        $districts = $this->filterByPrefix(District::query(), 'idDistrito', $idProvince, 4);
 
-        if ($districts->isEmpty()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'No se encontraron distritos para esta provincia.',
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'data' => $districts,
-        ]);
+        return $this->collectionOrNotFound($districts, 'No se encontraron distritos para esta provincia.');
     }
 
-    // Obtener escuelas de un distrito (según idDistrito completo)
-    public function getSchools($districtId)
+    /**
+     * Obtener escuelas de un distrito segun su ubigeo completo.
+     */
+    public function getSchools(string $districtId): JsonResponse
     {
         $schools = School::where('idDistrito', $districtId)->get();
 
-        if ($schools->isEmpty()) {
+        return $this->collectionOrNotFound($schools, 'No se encontraron escuelas para este distrito.');
+    }
+
+    /**
+     * Filtra por prefijo usando LIKE para aprovechar indices y mantener portabilidad entre motores SQL.
+     *
+     * @template TModel of Model
+     *
+     * @param  Builder<TModel>  $query
+     * @return Collection<int, TModel>
+     */
+    private function filterByPrefix(Builder $query, string $column, string $prefix, int $expectedLength): Collection
+    {
+        if (strlen($prefix) !== $expectedLength || strpbrk($prefix, '%_') !== false) {
+            return new Collection;
+        }
+
+        return $query->where($column, 'like', $prefix.'%')->get();
+    }
+
+    /**
+     * @param  Collection<int, Model>  $items
+     */
+    private function collectionOrNotFound(Collection $items, string $notFoundMessage): JsonResponse
+    {
+        if ($items->isEmpty()) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No se encontraron escuelas para este distrito.',
+                'message' => $notFoundMessage,
             ], 404);
         }
 
+        return $this->successResponse($items);
+    }
+
+    /**
+     * @param  Collection<int, Model>  $data
+     */
+    private function successResponse(Collection $data): JsonResponse
+    {
         return response()->json([
             'status' => 'success',
-            'data' => $schools,
+            'data' => $data,
         ]);
     }
 }
