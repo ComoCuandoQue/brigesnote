@@ -1,6 +1,6 @@
 # 🏫 Bridges Note - MINEDU ESCALE Bridge API
 
-Microservicio y API REST en **Laravel 7** diseñado para sincronizar, estructurar y servir el catálogo oficial de instituciones educativas (colegios) y la división política/geográfica (regiones, provincias y distritos) del Perú, consumiendo directamente la API pública oficial de **MINEDU / ESCALE** (*Estadística de la Calidad Educativa*).
+Microservicio y API REST en **Laravel 13** y **PHP 8.3+** diseñado para sincronizar, estructurar y servir el catálogo oficial de instituciones educativas (colegios) y la división política/geográfica (regiones, provincias y distritos) del Perú, consumiendo directamente la API pública oficial de **MINEDU / ESCALE** (*Estadística de la Calidad Educativa*).
 
 ---
 
@@ -13,8 +13,9 @@ Microservicio y API REST en **Laravel 7** diseñado para sincronizar, estructura
 5. [Configuración de Entorno (.env)](#-configuración-de-entorno-env)
 6. [Sincronización de Datos (Consola Artisan)](#-sincronización-de-datos-consola-artisan)
 7. [Documentación de la API REST](#-documentación-de-la-api-rest)
-8. [Estructura del Proyecto](#-estructura-del-proyecto)
-9. [Solución de Problemas Frecuentes](#-solución-de-problemas-frecuentes)
+8. [Pruebas y Calidad de Código](#-pruebas-y-calidad-de-código)
+9. [Estructura del Proyecto](#-estructura-del-proyecto)
+10. [Solución de Problemas Frecuentes](#-solución-de-problemas-frecuentes)
 
 ---
 
@@ -27,7 +28,7 @@ Servir como un **puente de datos optimizado** para aplicaciones cliente (sistema
 ## 🔄 Arquitectura y Flujo de Datos
 
 ```
-[ API MINEDU / ESCALE ] 
+[ API MINEDU / ESCALE ]
  (escale.minedu.gob.pe)
           │
           ▼  (Comando: php artisan sync:locations)
@@ -52,12 +53,12 @@ Servir como un **puente de datos optimizado** para aplicaciones cliente (sistema
 
 ## 💻 Requisitos del Sistema
 
-- **PHP:** `7.4.x` (Recomendado) o `8.0.x`.
-  > ⚠️ **Importante:** Laravel 7 no es compatible con PHP 8.1 o superior debido a cambios en la interfaz `ArrayAccess`.
-- **Laravel Framework:** `7.30.7`
+- **PHP:** `8.3` o superior (compatible con PHP `8.3`, `8.4` y `8.5`), con las extensiones `openssl`, `mbstring`, `curl`, `fileinfo`, `pdo_mysql`, `pdo_sqlite`, `sqlite3`, `intl`, `zip` y `xml`.
+- **Laravel Framework:** `13.x` (`^13.0`)
 - **Gestor de Paquetes:** Composer 2.x
-- **Base de Datos:** MySQL 5.7+ / 8.0+ o MariaDB 10.3+
-- **Servidor Web Local:** Laragon (con PHP 7.4 Thread Safe - TS), XAMPP o `php artisan serve`.
+- **Base de Datos:** MySQL 8.0+, MariaDB 10.6+ o SQLite 3
+- **Node.js / Vite (opcional, compilación de assets):** Node.js LTS + npm
+- **Servidor Web Local:** `php artisan serve`, Laragon o XAMPP con **PHP 8.3 (Thread Safe - TS)**.
 
 ---
 
@@ -65,7 +66,7 @@ Servir como un **puente de datos optimizado** para aplicaciones cliente (sistema
 
 ### 1. Clonar el repositorio
 ```bash
-git clone https://github.com/hubelsolis/brigesnote.git
+git clone https://github.com/ComoCuandoQue/brigesnote.git
 cd brigesnote
 ```
 
@@ -92,6 +93,8 @@ Crea las tablas en la base de datos:
 php artisan migrate
 ```
 
+> 💡 Alternativamente, los pasos 2, 3 y 5 se pueden ejecutar de una vez con `composer run setup` (después de crear la base de datos o configurar `.env`).
+
 ### 6. Sincronizar el catálogo escolar
 Descarga la información oficial desde MINEDU:
 ```bash
@@ -102,13 +105,13 @@ php artisan sync:locations
 ```bash
 php artisan serve
 ```
-La aplicación quedará disponible en `http://127.0.0.1:8000`.
+La aplicación quedará disponible en `http://127.0.0.1:8000` (health check en `GET /up`).
 
 ---
 
 ## ⚙️ Configuración de Entorno (.env)
 
-Asegúrate de tener estos valores configurados en tu archivo `.env`:
+Asegúrate de tener estos valores configurados en tu archivo `.env` (basado en `.env.example`):
 
 ```env
 APP_NAME="Bridges Note"
@@ -125,9 +128,9 @@ DB_DATABASE=escalebridge
 DB_USERNAME=root
 DB_PASSWORD=
 
-# Controlador de sesión en archivo (no requiere tabla 'sessions' en BD)
+# Sesion, cache y colas sin tablas extra en la BD
 SESSION_DRIVER=file
-CACHE_DRIVER=file
+CACHE_STORE=file
 QUEUE_CONNECTION=sync
 ```
 
@@ -153,7 +156,7 @@ php artisan sync:locations
 
 ## 📡 Documentación de la API REST
 
-Todos los endpoints retornan respuestas en formato JSON bajo el prefijo `/api/`.
+Todos los endpoints retornan respuestas en formato JSON bajo el prefijo `/api/` (con límite de 60 peticiones por minuto por IP y soporte CORS configurable en `config/cors.php`).
 
 ### 1. Listar Regiones / Departamentos
 Obtiene todas las regiones del país.
@@ -253,46 +256,80 @@ Obtiene todas las instituciones educativas registradas en un distrito según su 
 
 ---
 
+## 🧪 Pruebas y Calidad de Código
+
+La suite de pruebas usa **PHPUnit 12** con SQLite en memoria (definido en `phpunit.xml`) y `Http::fake()` para el comando de sincronización:
+
+```bash
+# Ejecutar todas las pruebas
+php artisan test
+
+# Verificar formato de código con Laravel Pint
+php vendor/bin/pint --test
+
+# Compilar assets con Vite (opcional)
+npm ci && npm run build
+```
+
+Además, el workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) valida automáticamente en cada `push` y `pull_request` sobre `main`: sintaxis (`php -l`), Pint, PHPUnit en PHP 8.3 y build de Vite.
+
+---
+
 ## 📂 Estructura del Proyecto
 
 ```
 brigesnote/
+├── .github/workflows/
+│   └── ci.yml                       # Pipeline CI con PHP 8.3 y Vite
 ├── app/
 │   ├── Console/Commands/
-│   │   └── SyncLocations.php       # Comando 'sync:locations' (consumo de API ESCALE)
+│   │   └── SyncLocations.php        # Comando 'sync:locations' (API ESCALE)
 │   ├── Http/Controllers/
-│   │   └── LocationController.php  # Controlador de endpoints /api/
-│   └── Models/
-│       ├── District.php            # Modelo Distritos
-│       ├── Province.php            # Modelo Provincias
-│       ├── Region.php              # Modelo Regiones
-│       └── School.php              # Modelo Colegios / Escuelas
-├── database/migrations/
-│   ├── ..._create_regions_table.php
-│   ├── ..._create_provinces_table.php
-│   ├── ..._create_districts_table.php
-│   └── ..._create_schools_table.php
+│   │   └── LocationController.php   # Controlador de endpoints /api/
+│   ├── Models/
+│   │   ├── District.php             # Modelo Distritos
+│   │   ├── Province.php             # Modelo Provincias
+│   │   ├── Region.php               # Modelo Regiones
+│   │   ├── School.php               # Modelo Colegios / Escuelas
+│   │   └── User.php                 # Modelo Usuario
+│   └── Providers/
+│       └── AppServiceProvider.php   # Rate limiter 'api' (60 req/min)
+├── bootstrap/
+│   ├── app.php                      # Configuración principal de Laravel 13
+│   └── providers.php                # Registro de providers
+├── database/
+│   ├── factories/UserFactory.php
+│   ├── migrations/                  # Migraciones (clases anónimas)
+│   └── seeders/DatabaseSeeder.php
+├── docs/
+│   └── PLAN_MIGRACION_PHP83.md      # Plan de migración a PHP 8.3 / Laravel 13
 ├── routes/
-│   └── api.php                     # Definición de rutas REST
-├── .env.example                    # Plantilla de variables de entorno
-└── .gitignore                      # Reglas de exclusión para Git
+│   ├── api.php                      # Rutas REST bajo /api/
+│   ├── console.php                  # Comandos de consola
+│   └── web.php                      # Ruta web base
+├── tests/Feature/
+│   ├── LocationApiTest.php          # Pruebas de endpoints REST
+│   └── SyncLocationsCommandTest.php # Pruebas del comando sync:locations
+├── .env.example                     # Plantilla de variables de entorno
+├── .gitignore                       # Reglas de exclusión para Git
+└── vite.config.js                   # Configuración de Vite
 ```
 
 ---
 
 ## 🛠️ Solución de Problemas Frecuentes
 
-### 1. Error: `During inheritance of ArrayAccess: Return type of ... should either be compatible`
-- **Causa:** Estás ejecutando el proyecto con PHP 8.1, 8.2 o superior.
-- **Solución:** Cambia la versión de PHP en Laragon (o en tu servidor) a **PHP 7.4 (Thread Safe)** o **PHP 8.0**.
+### 1. Error por extensiones faltantes en PHP 8.3 (`could not find driver` o `Class ... not found`)
+- **Causa:** En instalaciones limpias de PHP 8.3 en Windows, las extensiones vienen comentadas o sin `php.ini` activo.
+- **Solución:** Habilita en tu `php.ini` las extensiones `pdo_mysql`, `pdo_sqlite`, `sqlite3`, `mbstring`, `openssl`, `curl`, `fileinfo`, `intl` y `zip`.
 
 ### 2. Error: `Service Apache can not start ... fcgid.conf` en Laragon
 - **Causa:** Descargaste la versión `nts` (Non-Thread Safe) de PHP en Windows.
-- **Solución:** Descarga e instala en Laragon la versión **Thread Safe (TS)** desde [windows.php.net](https://windows.php.net/downloads/releases/archives/).
+- **Solución:** Descarga e instala en Laragon la versión **PHP 8.3 Thread Safe (TS)** desde [windows.php.net](https://windows.php.net/downloads/releases/).
 
 ### 3. Error: `Base table or view not found: 1146 Table '...sessions' doesn't exist`
-- **Causa:** En el archivo `.env` está configurado `SESSION_DRIVER=database` sin haber migrado la tabla de sesiones.
-- **Solución:** Cambia en `.env` a `SESSION_DRIVER=file`.
+- **Causa:** En el archivo `.env` está configurado `SESSION_DRIVER=database` o `CACHE_STORE=database` sin haber migrado esas tablas.
+- **Solución:** Mantén `SESSION_DRIVER=file` y `CACHE_STORE=file` en `.env` (como en `.env.example`).
 
 ---
 
