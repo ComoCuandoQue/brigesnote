@@ -49,6 +49,8 @@ Servir como un **puente de datos optimizado** para aplicaciones cliente (sistema
 [ Clientes / Aplicaciones Externas ] (ej. admisionweb)
 ```
 
+> 📌 **Despliegue desde la raíz:** Este proyecto mantiene el front controller (`index.php`, `.htaccess` y `web.config`) en la raíz del repositorio en lugar de `public/`, configurado en `bootstrap/app.php` con `$app->usePublicPath($app->basePath())`. Tanto `.htaccess` (Apache) como `web.config` (IIS) bloquean el acceso HTTP directo a directorios internos (`.env`, `app/`, `config/`, `vendor/`, etc.).
+
 ---
 
 ## 💻 Requisitos del Sistema
@@ -104,8 +106,10 @@ php artisan sync:locations
 ### 7. Iniciar el servidor
 ```bash
 php artisan serve
+# o mediante Composer:
+composer run dev
 ```
-La aplicación quedará disponible en `http://127.0.0.1:8000` (health check en `GET /up`).
+La aplicación quedará disponible en `http://127.0.0.1:8000` (health check integrado en `GET /up`).
 
 ---
 
@@ -138,7 +142,7 @@ QUEUE_CONNECTION=sync
 
 ## 📥 Sincronización de Datos (Consola Artisan)
 
-El comando central del sistema es:
+El comando central del sistema (`App\Console\Commands\SyncLocations`) es:
 
 ```bash
 php artisan sync:locations
@@ -150,16 +154,17 @@ php artisan sync:locations
 3. **Distritos (`/padron/rest/distritos?idProvincia={id}`):** Por cada provincia, descarga los distritos correspondientes.
 4. **Colegios (`/padron/rest/instituciones?estados=1&ubigeo={idDistrito}`):** Por cada distrito, descarga las instituciones educativas activas y las almacena en la tabla `schools` vinculando el código modular (`codMod`) como llave primaria y asociando el `idDistrito`.
 
-> ⏱️ **Nota:** La sincronización total recorre más de 1,800 distritos y 80,000 colegios, por lo que puede tomar varios minutos según la velocidad de conexión y respuesta del servidor del MINEDU.
+- **Idempotencia y tolerancia:** Las inserciones usan `updateOrCreate`, normalizan respuestas de ESCALE que llegan como objeto único o como lista, y aplican un timeout de `30` segundos por petición HTTP.
+- ⏱️ **Nota:** La sincronización total recorre más de 1,800 distritos y 80,000 colegios, por lo que puede tomar varios minutos según la velocidad de conexión y respuesta del servidor del MINEDU.
 
 ---
 
 ## 📡 Documentación de la API REST
 
-Todos los endpoints retornan respuestas en formato JSON bajo el prefijo `/api/` (con límite de 60 peticiones por minuto por IP y soporte CORS configurable en `config/cors.php`).
+Todos los endpoints retornan respuestas en formato JSON bajo el prefijo `/api/` (con límite de `60` peticiones por minuto por IP definido en `AppServiceProvider` y CORS configurado en `config/cors.php` para `api/*`). Los modelos Eloquent incluyen además los campos `created_at` y `updated_at`.
 
 ### 1. Listar Regiones / Departamentos
-Obtiene todas las regiones del país.
+Obtiene todas las regiones registradas en la base de datos (devuelve `200 OK` con `data: []` si la tabla está vacía).
 
 - **URL:** `/api/regiones`
 - **Método:** `GET`
@@ -171,8 +176,8 @@ Obtiene todas las regiones del país.
     {
       "idRegion": "15",
       "nombreRegion": "LIMA",
-      "pointX": -12.046374,
-      "pointY": -77.042793,
+      "pointX": "-12.0463740",
+      "pointY": "-77.0427930",
       "zoom": 10
     }
   ]
@@ -182,7 +187,7 @@ Obtiene todas las regiones del país.
 ---
 
 ### 2. Listar Provincias por Región
-Obtiene las provincias pertenecientes a una región (mediante los 2 primeros dígitos del código de departamento).
+Obtiene las provincias pertenecientes a una región (mediante el prefijo de 2 dígitos del código de departamento).
 
 - **URL:** `/api/provincias/{idRegion}`
 - **Método:** `GET`
@@ -195,17 +200,24 @@ Obtiene las provincias pertenecientes a una región (mediante los 2 primeros dí
     {
       "idProvincia": "1501",
       "nombreProvincia": "LIMA",
-      "pointX": -12.046374,
-      "pointY": -77.042793
+      "pointX": "-12.0463740",
+      "pointY": "-77.0427930"
     }
   ]
+}
+```
+- **Sin resultados o prefijo inválido (404 Not Found):**
+```json
+{
+  "status": "error",
+  "message": "No se encontraron provincias para esta región."
 }
 ```
 
 ---
 
 ### 3. Listar Distritos por Provincia
-Obtiene los distritos de una provincia (mediante los 4 dígitos de ubigeo provincial).
+Obtiene los distritos de una provincia (mediante el prefijo de 4 dígitos de ubigeo provincial).
 
 - **URL:** `/api/distritos/{idProvince}`
 - **Método:** `GET`
@@ -224,6 +236,13 @@ Obtiene los distritos de una provincia (mediante los 4 dígitos de ubigeo provin
       "nombreDistrito": "ANCON"
     }
   ]
+}
+```
+- **Sin resultados o prefijo inválido (404 Not Found):**
+```json
+{
+  "status": "error",
+  "message": "No se encontraron distritos para esta provincia."
 }
 ```
 
@@ -253,25 +272,36 @@ Obtiene todas las instituciones educativas registradas en un distrito según su 
   ]
 }
 ```
+- **Sin resultados (404 Not Found):**
+```json
+{
+  "status": "error",
+  "message": "No se encontraron escuelas para este distrito."
+}
+```
 
 ---
 
 ## 🧪 Pruebas y Calidad de Código
 
-La suite de pruebas usa **PHPUnit 12** con SQLite en memoria (definido en `phpunit.xml`) y `Http::fake()` para el comando de sincronización:
+La suite de pruebas usa **PHPUnit 12** con SQLite en memoria (configurado en `phpunit.xml`) y `Http::fake()` para el comando de sincronización:
 
 ```bash
 # Ejecutar todas las pruebas
 php artisan test
+# o mediante Composer:
+composer run test
 
 # Verificar formato de código con Laravel Pint
 php vendor/bin/pint --test
+# o mediante Composer:
+composer run lint
 
 # Compilar assets con Vite (opcional)
 npm ci && npm run build
 ```
 
-Además, el workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) valida automáticamente en cada `push` y `pull_request` sobre `main`: sintaxis (`php -l`), Pint, PHPUnit en PHP 8.3 y build de Vite.
+Además, el workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) valida automáticamente en cada `push` y `pull_request` sobre `main`: `composer validate --strict`, sintaxis (`php -l`), Pint, PHPUnit en PHP 8.3 y build de Vite.
 
 ---
 
@@ -297,22 +327,37 @@ brigesnote/
 ├── bootstrap/
 │   ├── app.php                      # Configuración principal de Laravel 13
 │   └── providers.php                # Registro de providers
+├── config/
+│   └── cors.php                     # Reglas CORS para rutas api/* (entre otros configs)
 ├── database/
 │   ├── factories/UserFactory.php
 │   ├── migrations/                  # Migraciones (clases anónimas)
 │   └── seeders/DatabaseSeeder.php
 ├── docs/
 │   └── PLAN_MIGRACION_PHP83.md      # Plan de migración a PHP 8.3 / Laravel 13
+├── resources/
+│   ├── css/app.css
+│   ├── js/
+│   └── views/welcome.blade.php
 ├── routes/
 │   ├── api.php                      # Rutas REST bajo /api/
 │   ├── console.php                  # Comandos de consola
 │   └── web.php                      # Ruta web base
-├── tests/Feature/
-│   ├── LocationApiTest.php          # Pruebas de endpoints REST
-│   └── SyncLocationsCommandTest.php # Pruebas del comando sync:locations
+├── tests/
+│   ├── Feature/
+│   │   ├── ExampleTest.php
+│   │   ├── LocationApiTest.php      # Pruebas de endpoints REST
+│   │   └── SyncLocationsCommandTest.php # Pruebas del comando sync:locations
+│   └── Unit/ExampleTest.php
 ├── .env.example                     # Plantilla de variables de entorno
 ├── .gitignore                       # Reglas de exclusión para Git
-└── vite.config.js                   # Configuración de Vite
+├── .htaccess                        # Reglas Apache y bloqueo de archivos internos
+├── composer.json                    # Dependencias PHP y scripts (setup, dev, test, lint)
+├── index.php                        # Front controller en la raíz
+├── package.json                     # Dependencias Node / Vite
+├── phpunit.xml                      # Configuración de PHPUnit 12
+├── vite.config.js                   # Configuración de Vite (salida en raíz)
+└── web.config                       # Reglas IIS y segmentos ocultos
 ```
 
 ---
@@ -335,4 +380,4 @@ brigesnote/
 
 ## 📄 Licencia
 
-Este proyecto es de código abierto bajo la licencia [MIT](LICENSE).
+Este proyecto es de código abierto bajo la licencia MIT (declarada en `composer.json`).
