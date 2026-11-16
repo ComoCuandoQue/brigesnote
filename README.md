@@ -2,26 +2,49 @@
 
 Microservicio y API REST en **Laravel 13** y **PHP 8.3+** diseñado para sincronizar, estructurar y servir el catálogo oficial de instituciones educativas (colegios) y la división política/geográfica (regiones, provincias y distritos) del Perú, consumiendo directamente la API pública oficial de **MINEDU / ESCALE** (*Estadística de la Calidad Educativa*).
 
+> 🔄 **Nota sobre este fork / modernización:** Este repositorio corresponde a la **migración integral** de la versión original (construida en **Laravel 7** / **PHP 7.4–8.0**) hacia un stack moderno en **Laravel 13** y **PHP 8.3+**, conservando intactos los endpoints REST, la estructura de base de datos y el comando `php artisan sync:locations`.
+
 ---
 
 ## 📋 Tabla de Contenidos
 
 1. [Propósito del Proyecto](#-propósito-del-proyecto)
-2. [Arquitectura y Flujo de Datos](#-arquitectura-y-flujo-de-datos)
-3. [Requisitos del Sistema](#-requisitos-del-sistema)
-4. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
-5. [Configuración de Entorno (.env)](#-configuración-de-entorno-env)
-6. [Sincronización de Datos (Consola Artisan)](#-sincronización-de-datos-consola-artisan)
-7. [Documentación de la API REST](#-documentación-de-la-api-rest)
-8. [Pruebas y Calidad de Código](#-pruebas-y-calidad-de-código)
-9. [Estructura del Proyecto](#-estructura-del-proyecto)
-10. [Solución de Problemas Frecuentes](#-solución-de-problemas-frecuentes)
+2. [Evolución Tecnológica (Antes vs. Actualmente)](#-evolución-tecnológica-antes-vs-actualmente)
+3. [Arquitectura y Flujo de Datos](#-arquitectura-y-flujo-de-datos)
+4. [Requisitos del Sistema](#-requisitos-del-sistema)
+5. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
+6. [Configuración de Entorno (.env)](#-configuración-de-entorno-env)
+7. [Sincronización de Datos (Consola Artisan)](#-sincronización-de-datos-consola-artisan)
+8. [Documentación de la API REST](#-documentación-de-la-api-rest)
+9. [Pruebas y Calidad de Código](#-pruebas-y-calidad-de-código)
+10. [Estructura del Proyecto](#-estructura-del-proyecto)
+11. [Solución de Problemas Frecuentes](#-solución-de-problemas-frecuentes)
 
 ---
 
 ## 🎯 Propósito del Proyecto
 
 Servir como un **puente de datos optimizado** para aplicaciones cliente (sistemas de admisión universitaria, plataformas de matrícula escolar, intranets, etc.), permitiéndoles autocompletar ubigeos y consultar colegios mediante consultas locales ultrarrápidas, sin depender de la latencia o disponibilidad de los servidores estatales.
+
+---
+
+## 🔄 Evolución Tecnológica (Antes vs. Actualmente)
+
+El proyecto original partió de un esqueleto **Laravel 7** que ya había quedado sin soporte y no podía ejecutarse en PHP ≥ 8.1. Esta versión reestructura la aplicación sobre **Laravel 13** y **PHP 8.3+** aplicando buenas prácticas actuales sin romper compatibilidad con los clientes existentes:
+
+| Área | Cómo estaba construido antes (Original) | Cómo está construido actualmente (Migrado) |
+|---|---|---|
+| **PHP** | `^7.2.5 \| ^8.0` (recomendado `7.4`; fallaba en `8.1+` por cambios en `ArrayAccess`). Sin tipado estricto en métodos ni constantes. | `^8.3` (verificado en `8.3.36`, compatible con `8.4`/`8.5`), con tipos en parámetros y retornos, constantes tipadas y `#[\Override]`. |
+| **Framework** | **Laravel `7.30.7`** (`^7.29`). | **Laravel `13.42.0`** (`^13.0`). |
+| **Estructura base** | Arquitectura clásica de L7 con `app/Http/Kernel.php`, `app/Console/Kernel.php`, `app/Exceptions/Handler.php`, `RouteServiceProvider`, middlewares por defecto, `App\User` y un `app/Region.php` duplicado. | Arranque unificado en `bootstrap/app.php` (`withRouting`, `throttleApi` de `60/min` en `AppServiceProvider`) y `bootstrap/providers.php`; modelos consolidados en `App\Models\`. |
+| **Dependencias PHP** | Paquetes externos hoy abandonados o absorbidos por el core: `fideloper/proxy`, `fruitcake/laravel-cors`, `facade/ignition`, `collision ^4.3`, `phpunit ^8.5\|^9.3`. | Proxies y CORS nativos de Laravel, `guzzlehttp/guzzle ^7.9`, `tinker ^3.0`, `collision ^8.6`, `phpunit ^12.5` y `laravel/pint ^1.27`. |
+| **Consultas y BD** | `database/seeds` por `classmap`, factories con closures, migraciones con clases nombradas y filtros SQL `LEFT(col, n) = ?` dependientes de MySQL. | `database/seeders` PSR-4, factories basadas en clases, migraciones anónimas (`: void`) y filtrado por prefijo con `LIKE` (portable entre MySQL/SQLite y apto para índices). |
+| **Sincronización ESCALE** | `SyncLocations` repetía el manejo de objeto único vs. lista en cada nivel, sin timeout HTTP explícito y sin tolerancia cuando faltaban claves. | Helpers compartidos (`fetchJson`, `normalizeRecords`), timeout de `30` s por petición y manejo seguro de payloads vacíos o errores parciales. |
+| **Rutas API** | Incluía ruta heredada `GET /api/user` protegida con `auth:api` (guard inexistente en el servicio). | Mantiene exclusivamente los 4 endpoints públicos de ubigeos y colegios, con soporte CORS y límite de `60` req/min. |
+| **Frontend / Assets** | `laravel-mix 5` + Webpack + `sass` (`webpack.mix.js`). | **Vite 8** + `laravel-vite-plugin` (`vite.config.js`) con salida en raíz. |
+| **Pruebas y CI** | Solo `ExampleTest` por defecto; sin automatización ni verificación de estilo. | Suite **PHPUnit 12** (`LocationApiTest` y `SyncLocationsCommandTest` con SQLite en memoria y `Http::fake()`), **Laravel Pint** y pipeline en **GitHub Actions** (`.github/workflows/ci.yml`). |
+
+> 📄 El detalle paso a paso de las fases ejecutadas durante la actualización puede consultarse en [docs/PLAN_MIGRACION_PHP83.md](docs/PLAN_MIGRACION_PHP83.md).
 
 ---
 
